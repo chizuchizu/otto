@@ -32,12 +32,22 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 """
 
 from typing import Any, Dict
-
+import umap
+from sklearn.manifold import TSNE
+from scipy.sparse.csgraph import connected_components
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import warnings
+warnings.simplefilter('ignore')
+
+# import cudf
+# import cuml
 
 
 def docking(train: pd.DataFrame, test: pd.DataFrame):
     print("docking")
+    dict_a: Dict
     dict_a = {"Class_1": 0,
               "Class_2": 1,
               "Class_3": 2,
@@ -59,3 +69,14 @@ def docking(train: pd.DataFrame, test: pd.DataFrame):
     return con_df, target
 
 
+def do_umap(df: pd.DataFrame, target: pd.Series):
+    ump = umap.UMAP(n_components=2, n_neighbors=9)
+    ump.fit(df.iloc[:len(target), :])
+    embedding = ump.transform(df.iloc[:len(target), :])
+    memo = ump.transform(df)
+
+    # print(embedding)
+    plt.scatter(embedding[:, 0], embedding[:, 1], c=target)
+    plt.show()
+    df[["umap1", "umap2"]] = memo
+    return df

@@ -33,7 +33,7 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 
 from kedro.pipeline import Pipeline, node
 
-from .nodes import docking
+from .nodes import docking, do_umap
 
 
 def create_pipeline(**kwargs):
@@ -43,6 +43,11 @@ def create_pipeline(**kwargs):
                 docking,
                 ["train", "test"],
                 ["df", "target"],
+            ),
+            node(
+                do_umap,
+                ["df", "target"],
+                ["new_df"]
             )
         ]
     )
