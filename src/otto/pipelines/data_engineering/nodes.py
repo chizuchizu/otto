@@ -33,19 +33,17 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 
 from typing import Any, Dict
 import umap
-from sklearn.manifold import TSNE
+import numpy as np
 from scipy.sparse.csgraph import connected_components
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import warnings
+
 warnings.simplefilter('ignore')
 
-# import cudf
-# import cuml
 
-
-def docking(train: pd.DataFrame, test: pd.DataFrame):
+def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series]:
     print("docking")
     dict_a: Dict
     dict_a = {"Class_1": 0,
@@ -69,14 +67,22 @@ def docking(train: pd.DataFrame, test: pd.DataFrame):
     return con_df, target
 
 
-def do_umap(df: pd.DataFrame, target: pd.Series):
-    ump = umap.UMAP(n_components=2, n_neighbors=9)
-    ump.fit(df.iloc[:len(target), :])
-    embedding = ump.transform(df.iloc[:len(target), :])
-    memo = ump.transform(df)
+def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
+    umap_path = parameters["umap_path"]
+
+    if not os.path.isfile(umap_path):
+        ump = umap.UMAP(n_components=2, n_neighbors=9)
+        ump.fit(np.log1p(df.iloc[:len(target), :]))
+        embedding = ump.transform(np.log1p(df.iloc[:len(target), :]))
+        memo = ump.transform(df)
+        np.save(umap_path, memo)
+
+        plt.scatter(embedding[:, 0], embedding[:, 1], c=target, alpha=0.4)
+        plt.colorbar()
+        plt.show()
+    else:
+        memo = np.load(umap_path)
 
     # print(embedding)
-    plt.scatter(embedding[:, 0], embedding[:, 1], c=target)
-    plt.show()
-    df[["umap1", "umap2"]] = memo
+    df = pd.concat([df, pd.DataFrame(memo, columns=["umap1", "umap2"])], axis=1, join_axes=[df.index])
     return df

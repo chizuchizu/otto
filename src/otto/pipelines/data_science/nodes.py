@@ -38,41 +38,35 @@ from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import KFold
+import xgboost as xgb
 
 
 def train_model(
-    train_x: pd.DataFrame, train_y: pd.DataFrame, parameters: Dict[str, Any]
-) -> np.ndarray:
-    """Node for training a simple multi-class logistic regression model. The
-    number of training iterations as well as the learning rate are taken from
-    conf/project/parameters.yml. All of the data as well as the parameters
-    will be provided to this function at the time of execution.
-    """
-    num_iter = parameters["example_num_train_iter"]
-    lr = parameters["example_learning_rate"]
-    X = train_x.values
-    Y = train_y.values
+        df: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
+):
+    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    # Add bias to the features
-    bias = np.ones((X.shape[0], 1))
-    X = np.concatenate((bias, X), axis=1)
+    train_x = df.iloc[:len(target), :]
+    test_x = df.iloc[len(target):, :]
 
-    weights = []
-    # Train one model for each class in Y
-    for k in range(Y.shape[1]):
-        # Initialise weights
-        theta = np.zeros(X.shape[1])
-        y = Y[:, k]
-        for _ in range(num_iter):
-            z = np.dot(X, theta)
-            h = _sigmoid(z)
-            gradient = np.dot(X.T, (h - y)) / y.size
-            theta -= lr * gradient
-        # Save the weights for each model
-        weights.append(theta)
+    xgtrain = xgb.DMatrix(train_x, label=target)
+    clf = xgb.XGBClassifier(
+        max_depth=parameters["max_depth"],
+        learning_rate=parameters["learning_rate"],
+        n_jobs=parameters["n_jobs"],
+        objective=parameters["objective"],
+        num_class=9
+    )
+    xgb_param = clf.get_xgb_params()
 
-    # Return a joint multi-class model with weights for all classes
-    return np.vstack(weights).transpose()
+    cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=5000, nfold=5, metrics=["logloss"],
+                      early_stopping_rounds=200)
+    print("Best number of trees = {}".format(cvresult.shape[0]))
+    clf.set_params(n_estimators=cvresult.shape[0])
+    clf.fit(train_x, target, eval_metric="logloss")
+
+    return None
 
 
 def predict(model: np.ndarray, test_x: pd.DataFrame) -> np.ndarray:

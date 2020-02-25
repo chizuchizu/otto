@@ -46,8 +46,8 @@ def create_pipeline(**kwargs):
             ),
             node(
                 do_umap,
-                ["df", "target"],
-                ["new_df"]
+                ["df", "target", "parameters"],
+                "new_df"
             )
         ]
     )
