@@ -45,28 +45,26 @@ import xgboost as xgb
 def train_model(
         df: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
 ):
-    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+    # kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
     train_x = df.iloc[:len(target), :]
-    test_x = df.iloc[len(target):, :]
+    # test_x = df.iloc[len(target):, :]
 
     xgtrain = xgb.DMatrix(train_x, label=target)
-    clf = xgb.XGBClassifier(
-        max_depth=parameters["max_depth"],
-        learning_rate=parameters["learning_rate"],
-        n_jobs=parameters["n_jobs"],
-        objective=parameters["objective"],
-        num_class=9
-    )
-    xgb_param = clf.get_xgb_params()
+
+    xgb_param = {
+        "max_depth": parameters["max_depth"],
+        "learning_rate": parameters["learning_rate"],
+        "n_jobs": parameters["n_jobs"],
+        "objective": parameters["objective"],
+        "num_class": 9
+    }
 
     cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=5000, nfold=5, metrics=["logloss"],
                       early_stopping_rounds=200)
     print("Best number of trees = {}".format(cvresult.shape[0]))
-    clf.set_params(n_estimators=cvresult.shape[0])
-    clf.fit(train_x, target, eval_metric="logloss")
-
-    return None
+    gbdt = xgb.train(xgb_param, xgtrain, num_boost_round=cvresult.shape[0])
+    return gbdt
 
 
 def predict(model: np.ndarray, test_x: pd.DataFrame) -> np.ndarray:
