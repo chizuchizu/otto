@@ -85,4 +85,6 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
 
     # print(embedding)
     df = pd.concat([df, pd.DataFrame(memo, columns=["umap1", "umap2"])], axis=1, join_axes=[df.index])
-    return df
+    train_df = df.iloc[:len(target), :]
+    test_df = df.iloc[len(target):, :]
+    return train_df, test_df

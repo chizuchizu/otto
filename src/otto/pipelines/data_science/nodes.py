@@ -38,11 +38,14 @@ from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
+import lightgbm as lgb
+import matplotlib.pyplot as plt
+from datetime import datetime
 from sklearn.model_selection import KFold
 import xgboost as xgb
 
 
-def train_model(
+def xgb_train_model(
         df: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
 ):
     # kfold = KFold(n_splits=5, shuffle=True, random_state=42)
@@ -55,47 +58,69 @@ def train_model(
     xgb_param = {
         "max_depth": parameters["max_depth"],
         "learning_rate": parameters["learning_rate"],
-        "n_jobs": parameters["n_jobs"],
+        # "n_jobs": parameters["n_jobs"],
         "objective": parameters["objective"],
-        "num_class": 9
+        "booster": "gbtree",
+        "num_class": 9,
+        "num_leaves": 64
     }
+    if parameters["gpu"]:
+        xgb_param["device"] = "gpu"
+        xgb_param["tree_method"] = "gpu_hist"
+        xgb_param["max_bin"] = 1024
 
-    cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=5000, nfold=5, metrics=["logloss"],
-                      early_stopping_rounds=200)
+    cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=500, nfold=5, metrics=parameters["metric"],
+                      early_stopping_rounds=100, verbose_eval=50)
     print("Best number of trees = {}".format(cvresult.shape[0]))
     gbdt = xgb.train(xgb_param, xgtrain, num_boost_round=cvresult.shape[0])
     return gbdt
 
 
-def predict(model: np.ndarray, test_x: pd.DataFrame) -> np.ndarray:
+def lgbm_train_model(
+        train_x: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
+):
+    lgb_train = lgb.Dataset(train_x, target)
+
+    lgbm_params = {
+        "objective": "multiclass",
+        "num_class": 9,
+        "max_depth": 14,
+        "learning_rate": parameters["learning_rate"],
+        "metric": "multi_logloss",
+        "num_leaves": 50
+    }
+    gbdt = lgb.cv(lgbm_params,
+                  lgb_train,
+                  nfold=5,
+                  early_stopping_rounds=100,
+                  num_boost_round=1000,
+                  verbose_eval=100
+                  )
+    print("Best num_boost_round: ", len(gbdt["multi_logloss-mean"]))
+    clf = lgb.train(lgbm_params, lgb_train, num_boost_round=len(gbdt["multi_logloss-mean"]), verbose_eval=100)
+    print("DONE")
+    clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
+
+    lgb.plot_importance(clf, max_num_features=20, importance_type="gain")
+    plt.show()
+    return clf
+
+
+def predict(model, test_x: pd.DataFrame) -> np.ndarray:
     """Node for making predictions given a pre-trained model and a test set.
     """
-    X = test_x.values
-
-    # Add bias to the features
-    bias = np.ones((X.shape[0], 1))
-    X = np.concatenate((bias, X), axis=1)
-
-    # Predict "probabilities" for each class
-    result = _sigmoid(np.dot(X, model))
-
+    pred = model.predict(test_x)
     # Return the index of the class with max probability for all samples
-    return np.argmax(result, axis=1)
+    return pred
 
 
-def report_accuracy(predictions: np.ndarray, test_y: pd.DataFrame) -> None:
-    """Node for reporting the accuracy of the predictions performed by the
-    previous node. Notice that this function has no outputs, except logging.
-    """
-    # Get true class index
-    target = np.argmax(test_y.values, axis=1)
-    # Calculate accuracy of predictions
-    accuracy = np.sum(predictions == target) / target.shape[0]
-    # Log the accuracy of the model
-    log = logging.getLogger(__name__)
-    log.info("Model accuracy on test set: %0.2f%%", accuracy * 100)
+def make_submit_file(pred: np.ndarray, ss: pd.DataFrame) -> None:
+    save_path = "data/07_model_output/{}.csv".format(datetime.today())
+    ss.iloc[:, 1:] = pred
+    ss.to_csv(save_path, index=None)
 
 
-def _sigmoid(z):
-    """A helper sigmoid function used by the training and the scoring nodes."""
-    return 1 / (1 + np.exp(-z))
+def features_importance(model, df: pd.DataFrame):
+    importance = pd.DataFrame(model.features_importance(importance_type="gain"), index=df.columns,
+                              columns=["importance"])
+    print(importance.head(20))
