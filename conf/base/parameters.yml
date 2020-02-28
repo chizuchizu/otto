@@ -3,8 +3,8 @@
 # remove the example pipeline from pipeline.py and the example nodes in
 # `src/pipelines/`
 umap_path: "data/04_features/umap.npy"
-max_depth: 10
-learning_rate: 0.02
+max_depth: 7
+learning_rate: 0.05
 n_jobs: 10
 objective: "multi:softmax"
 metric: "mlogloss"

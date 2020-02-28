@@ -84,16 +84,21 @@ def lgbm_train_model(
     lgbm_params = {
         "objective": "multiclass",
         "num_class": 9,
-        "max_depth": 14,
+        "max_depth": parameters["max_depth"],
+        "bagging_freq": 5,
+        "bagging_fraction": 0.9,  # subsample
+        "feature_fraction": 0.9,
         "learning_rate": parameters["learning_rate"],
         "metric": "multi_logloss",
-        "num_leaves": 50
+#         "num_leaves": 16,
+        "subsample": 0.7,
+        "verbose": -1
     }
     gbdt = lgb.cv(lgbm_params,
                   lgb_train,
                   nfold=5,
                   early_stopping_rounds=100,
-                  num_boost_round=1000,
+                  num_boost_round=2000,
                   verbose_eval=100
                   )
     print("Best num_boost_round: ", len(gbdt["multi_logloss-mean"]))

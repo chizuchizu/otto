@@ -35,6 +35,7 @@ from typing import Any, Dict
 import umap
 import numpy as np
 from scipy.sparse.csgraph import connected_components
+from sklearn.decomposition import PCA
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -67,6 +68,15 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     return con_df, target
 
 
+def split_data(df, df_umap, df_pca, df_features,target):
+
+    # df = pd.concat([df, df_pca], axis=1, join_axes=[df.index])
+    df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
+    train_df = df.iloc[:len(target), :]
+    test_df = df.iloc[len(target):, :]
+    return train_df, test_df
+
+
 def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
     umap_path = parameters["umap_path"]
 
@@ -84,7 +94,18 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
         memo = np.load(umap_path)
 
     # print(embedding)
-    df = pd.concat([df, pd.DataFrame(memo, columns=["umap1", "umap2"])], axis=1, join_axes=[df.index])
-    train_df = df.iloc[:len(target), :]
-    test_df = df.iloc[len(target):, :]
-    return train_df, test_df
+    df = pd.DataFrame(memo, columns=["umap1", "umap2"])
+    return df
+
+
+def do_pca(df: pd.DataFrame):
+    pca = PCA(n_components=2)
+    df_pca = pca.fit_transform(df)
+    df_pca = pd.DataFrame(df_pca, columns=["pca1", "pca2"])
+    return df_pca
+
+def make_features(df: pd.DataFrame):
+    memo = pd.DataFrame()
+    memo["count_zero"] = df[df == 0].count(axis=1)
+    memo["count_one"] = df[df == 1].count(axis=1)
+    return memo

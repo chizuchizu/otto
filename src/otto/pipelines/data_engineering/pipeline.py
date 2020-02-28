@@ -33,7 +33,7 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 
 from kedro.pipeline import Pipeline, node
 
-from .nodes import docking, do_umap
+from .nodes import *
 
 
 def create_pipeline(**kwargs):
@@ -47,6 +47,21 @@ def create_pipeline(**kwargs):
             node(
                 do_umap,
                 ["df", "target", "parameters"],
+                "df_umap"
+            ),
+            node(
+                do_pca,
+                "df",
+                "df_pca"
+            ),
+            node(
+                make_features,
+                "df",
+                "df_features"
+            ),
+            node(
+                split_data,
+                ["df", "df_umap", "df_pca", "df_features", "target"],
                 ["df_train", "df_test"]
             )
         ]
