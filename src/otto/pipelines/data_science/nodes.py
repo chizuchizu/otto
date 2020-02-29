@@ -43,6 +43,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from sklearn.model_selection import KFold
 import xgboost as xgb
+import shap
 
 
 def xgb_train_model(
@@ -85,13 +86,13 @@ def lgbm_train_model(
         "objective": "multiclass",
         "num_class": 9,
         "max_depth": parameters["max_depth"],
-        "bagging_freq": 5,
+        # "bagging_freq": 5,
         "bagging_fraction": 0.9,  # subsample
         "feature_fraction": 0.9,
         "learning_rate": parameters["learning_rate"],
         "metric": "multi_logloss",
 #         "num_leaves": 16,
-        "subsample": 0.7,
+        # "subsample": 0.7,
         "verbose": -1
     }
     gbdt = lgb.cv(lgbm_params,

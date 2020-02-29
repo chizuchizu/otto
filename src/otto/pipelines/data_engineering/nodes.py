@@ -65,15 +65,21 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     """
     con_df = con_df.drop(["id", "target"], axis=1)
     con_df.columns = con_df.columns.map(lambda x: int(x[5:]))
+
     return con_df, target
 
 
-def split_data(df, df_umap, df_pca, df_features,target):
+def split_data(df, df_umap, df_pca, df_features, target):
+    # df = np.log1p(df)
+    # df = pd.concat([df, df_pca], axis=1, join="inner")
+    df = pd.concat([df, df_features], axis=1, join="inner")
+    # df = df_pca.copy()
 
-    # df = pd.concat([df, df_pca], axis=1, join_axes=[df.index])
-    df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
-    train_df = df.iloc[:len(target), :]
-    test_df = df.iloc[len(target):, :]
+    # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
+    train_df = df[:len(target)]
+    test_df = df[len(target):]
+    df.to_csv("data/04_features/train2_csv", index=False)
+
     return train_df, test_df
 
 
@@ -82,8 +88,8 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
 
     if not os.path.isfile(umap_path):
         ump = umap.UMAP(n_components=2, n_neighbors=9)
-        ump.fit(np.log1p(df.iloc[:len(target), :]))
-        embedding = ump.transform(np.log1p(df.iloc[:len(target), :]))
+        ump.fit(df.iloc[:len(target), :])
+        embedding = ump.transform(df.iloc[:len(target), :])
         memo = ump.transform(df)
         np.save(umap_path, memo)
 
@@ -94,15 +100,19 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
         memo = np.load(umap_path)
 
     # print(embedding)
-    df = pd.DataFrame(memo, columns=["umap1", "umap2"])
-    return df
+    return_df = pd.DataFrame(memo, columns=["umap1", "umap2"])
+    return return_df
 
 
-def do_pca(df: pd.DataFrame):
-    pca = PCA(n_components=2)
+def do_pca(df: pd.DataFrame, target: pd.Series):
+    n = 10
+    pca = PCA(n_components=n)
+    # pca.fit(np.log1p(df))
     df_pca = pca.fit_transform(df)
-    df_pca = pd.DataFrame(df_pca, columns=["pca1", "pca2"])
+    n_name = [f"pca{i}" for i in range(n)]
+    df_pca = pd.DataFrame(df_pca, columns=n_name)
     return df_pca
+
 
 def make_features(df: pd.DataFrame):
     memo = pd.DataFrame()
