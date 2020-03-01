@@ -51,7 +51,7 @@ def create_pipeline(**kwargs):
             ),
             node(
                 do_pca,
-                ["df", "target"],
+                ["df"],
                 "df_pca"
             ),
             node(

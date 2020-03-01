@@ -65,13 +65,14 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     """
     con_df = con_df.drop(["id", "target"], axis=1)
     con_df.columns = con_df.columns.map(lambda x: int(x[5:]))
+    con_df = np.log1p(con_df)
 
     return con_df, target
 
 
 def split_data(df, df_umap, df_pca, df_features, target):
     # df = np.log1p(df)
-    # df = pd.concat([df, df_pca], axis=1, join="inner")
+    df = pd.concat([df, df_pca], axis=1, join="inner")
     df = pd.concat([df, df_features], axis=1, join="inner")
     # df = df_pca.copy()
 
@@ -104,7 +105,7 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
     return return_df
 
 
-def do_pca(df: pd.DataFrame, target: pd.Series):
+def do_pca(df: pd.DataFrame):
     n = 10
     pca = PCA(n_components=n)
     # pca.fit(np.log1p(df))
@@ -117,5 +118,5 @@ def do_pca(df: pd.DataFrame, target: pd.Series):
 def make_features(df: pd.DataFrame):
     memo = pd.DataFrame()
     memo["count_zero"] = df[df == 0].count(axis=1)
-    memo["count_one"] = df[df == 1].count(axis=1)
+    # memo["count_one"] = df[df == 1].count(axis=1)
     return memo
