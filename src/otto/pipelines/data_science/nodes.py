@@ -38,6 +38,19 @@ from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.layers import Input
+from tensorflow.keras.layers import Conv1D
+from tensorflow.keras.layers import Reshape, LayerNormalization, PReLU
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import AveragePooling1D
+from tensorflow.keras.layers import Dropout
+
+from tensorflow.keras.constraints import max_norm
+from tensorflow.keras import regularizers
+
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -91,7 +104,7 @@ def lgbm_train_model(
         "feature_fraction": 0.9,
         "learning_rate": parameters["learning_rate"],
         "metric": "multi_logloss",
-#         "num_leaves": 16,
+        #         "num_leaves": 16,
         # "subsample": 0.7,
         "verbose": -1
     }
@@ -110,6 +123,67 @@ def lgbm_train_model(
     lgb.plot_importance(clf, max_num_features=20, importance_type="gain")
     plt.show()
     return clf
+
+
+def cnn_train_model(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict[str, Any]
+):
+    n_splits = 5
+    num_class = 9
+    epochs = 10
+    lr_init = 0.01
+    bs = 128
+    num_features = df.shape[1]
+    folds = KFold(n_splits=n_splits)
+
+    def lr_scheduler(epoch):
+        if epoch <= epochs * 0.8:
+            return lr_init
+        else:
+            return lr_init * 0.1
+
+    model = tf.keras.models.Sequential([
+        Input(shape=(num_features,)),
+        Dense(1024, kernel_initializer='glorot_uniform'),
+        Dropout(0.25),
+
+        Dense(512, kernel_initializer='glorot_uniform'),
+        Dropout(0.25),
+
+        Dense(512, kernel_initializer='glorot_uniform'),
+        Dropout(0.25),
+
+        Dense(num_class, activation="softmax")
+    ])
+
+    print(model.summary())
+    optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
+
+    """callbacks"""
+    callbacks = []
+    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
+    log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
+
+    model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
+    preds = np.zeros((test.shape[0], num_class))
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        # train_x = np.reshape(train_x, (-1, num_features, 1))
+        # val_x = np.reshape(val_x, (-1, num_features, 1))
+        model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
+                  callbacks=callbacks)
+        preds += model.predict(test.values) / 5
+
+    return preds
+
+
+def get_features(preds, df):
+    return None
 
 
 def predict(model, test_x: pd.DataFrame) -> np.ndarray:

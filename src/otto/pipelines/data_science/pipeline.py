@@ -33,25 +33,25 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 
 from kedro.pipeline import Pipeline, node
 
-from .nodes import predict, xgb_train_model, lgbm_train_model, make_submit_file
+from .nodes import predict, xgb_train_model, lgbm_train_model, make_submit_file, cnn_train_model
 
 
 def create_pipeline(**kwargs):
     return Pipeline(
         [
             node(
-                lgbm_train_model,
-                ["df_train", "target", "parameters"],
-                "lgb_model"
+                cnn_train_model,
+                ["df_train", "target", "df_test", "parameters"],
+                "nn_pred"
             ),
-            node(
-                predict,
-                ["lgb_model", "df_test"],
-                "lgb_pred"
-            ),
+            # node(
+            #     predict,
+            #     ["lgb_model", "df_test"],
+            #     "lgb_pred"
+            # ),
             node(
                 make_submit_file,
-                ["lgb_pred", "sample_submission"],
+                ["nn_pred", "sample_submission"],
                 None
             )
         ]
