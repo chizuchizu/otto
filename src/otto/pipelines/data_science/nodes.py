@@ -39,6 +39,8 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from sklearn.decomposition import PCA
+
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Conv1D
 from tensorflow.keras.layers import Reshape, LayerNormalization, PReLU
@@ -50,7 +52,7 @@ from tensorflow.keras.layers import Dropout
 
 from tensorflow.keras.constraints import max_norm
 from tensorflow.keras import regularizers
-
+import os
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -128,13 +130,19 @@ def lgbm_train_model(
 def cnn_train_model(
         df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict[str, Any]
 ):
+    """
+    Tensor Boardの見方
+
+    %load_ext tensorboard
+
+    """
     n_splits = 5
     num_class = 9
     epochs = 10
     lr_init = 0.01
-    bs = 128
-    num_features = df.shape[1]
-    folds = KFold(n_splits=n_splits)
+    bs = 256
+    num_features = df.shape[1] + 10
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     def lr_scheduler(epoch):
         if epoch <= epochs * 0.8:
@@ -144,13 +152,40 @@ def cnn_train_model(
 
     model = tf.keras.models.Sequential([
         Input(shape=(num_features,)),
-        Dense(1024, kernel_initializer='glorot_uniform'),
+        Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
         Dropout(0.25),
 
-        Dense(512, kernel_initializer='glorot_uniform'),
+        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
         Dropout(0.25),
 
-        Dense(512, kernel_initializer='glorot_uniform'),
+        Dense(256, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(512, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(512, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(256, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
+        BatchNormalization(),
         Dropout(0.25),
 
         Dense(num_class, activation="softmax")
@@ -168,16 +203,37 @@ def cnn_train_model(
     model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
     preds = np.zeros((test.shape[0], num_class))
     for trn_idx, val_idx in folds.split(df, target):
-        train_x = df.iloc[trn_idx, :].values
-        val_x = df.iloc[val_idx, :].values
+        n = 10
+        pca = PCA(n_components=n)
+        pca.fit(df.iloc[trn_idx, :])
+        n_name = [f"pca{i}" for i in range(n)]
+
+        train_x = df.iloc[trn_idx, :]
+        # memo = pd.DataFrame(pca.transform(train_x), columns=n_name)
+        train_x = pd.concat([train_x, pd.DataFrame(pca.transform(train_x), columns=n_name)], axis=1,
+                            join_axes=[train_x.index]).values
+
+        val_x = df.iloc[val_idx]
+        val_x = pd.concat([val_x, pd.DataFrame(pca.transform(val_x), columns=n_name)], axis=1,
+                          join_axes=[val_x.index]).values
+
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
+
+        train_x = np.nan_to_num(train_x)
+        val_x = np.nan_to_num(val_x)
 
         # train_x = np.reshape(train_x, (-1, num_features, 1))
         # val_x = np.reshape(val_x, (-1, num_features, 1))
         model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
                   callbacks=callbacks)
-        preds += model.predict(test.values) / 5
+
+        new_test = pd.concat([test, pd.DataFrame(pca.transform(test), columns=n_name)], axis=1,
+                             join_axes=[test.index])
+        preds += model.predict(new_test.values) / 5
+    print(
+        "\nIf you want to watch TF Board, you should enter the command."
+        "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
 
     return preds
 
