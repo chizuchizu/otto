@@ -45,6 +45,11 @@ def create_pipeline(**kwargs):
                 "nn_pred"
             ),
             # node(
+            #     lgbm_train_model,
+            #     ["df_train", "target", "parameters"],
+            #     "lgb_model"
+            # ),
+            # node(
             #     predict,
             #     ["lgb_model", "df_test"],
             #     "lgb_pred"

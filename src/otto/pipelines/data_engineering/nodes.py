@@ -36,6 +36,7 @@ import umap
 import numpy as np
 from scipy.sparse.csgraph import connected_components
 from sklearn.decomposition import PCA
+import cuml.manifold    as tsne_rapids
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -70,13 +71,19 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     return con_df, target
 
 
-def split_data(df, df_umap, df_pca, df_features, target):
+def split_data(df, df_tsne, df_umap, df_pca, df_features, target):
     # df = np.log1p(df)
     # df = pd.concat([df, df_pca], axis=1, join="inner")
-    df = pd.concat([df, df_features], axis=1, join="inner")
-    # df = df_pca.copy()
 
-    # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
+    # df = pd.concat([df, df_pca], axis=1, join_axes=[df.index])
+    df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
+
+        # df = df_pca.copy()
+
+        # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
+    df = pd.concat([df.reset_index(drop=True), df_features.reset_index(drop=True)], axis=1)
     train_df = df[:len(target)]
     test_df = df[len(target):]
     df.to_csv("data/04_features/train2_csv", index=False)
@@ -106,7 +113,7 @@ def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
 
 
 def do_pca(df: pd.DataFrame, target: pd.Series):
-    n = 10
+    n = 20
     pca = PCA(n_components=n)
     pca.fit(df[:len(target)])
     # df_pca = pca.fit_transform(df)
@@ -114,6 +121,17 @@ def do_pca(df: pd.DataFrame, target: pd.Series):
     n_name = [f"pca{i}" for i in range(n)]
     df_pca = pd.DataFrame(df_pca, columns=n_name)
     return df_pca
+
+def do_tSNE(df: pd.DataFrame, target: pd.Series):
+    """
+    https://www.kaggle.com/titericz/t-sne-visualization-with-rapids
+    """
+    tsne = tsne_rapids.TSNE(n_components=2, perplexity=30, verbose=2)
+    # tsne.fit(df[:len(target)])
+    df_tsne = tsne.fit_transform(df.values)
+    plt.scatter(df_tsne[:len(target), 0], df_tsne[:len(target), 1], c=target, s=0.5)
+    plt.show()
+    return pd.DataFrame(df_tsne, columns=["tsne_1", "tsne_2"])
 
 
 def make_features(df: pd.DataFrame):

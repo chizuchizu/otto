@@ -102,8 +102,6 @@ def lgbm_train_model(
         "num_class": 9,
         "max_depth": parameters["max_depth"],
         # "bagging_freq": 5,
-        "bagging_fraction": 0.9,  # subsample
-        "feature_fraction": 0.9,
         "learning_rate": parameters["learning_rate"],
         "metric": "multi_logloss",
         #         "num_leaves": 16,
@@ -138,11 +136,11 @@ def cnn_train_model(
     """
     n_splits = 5
     num_class = 9
-    epochs = 10
+    epochs = 20
     lr_init = 0.01
     bs = 256
-    num_features = df.shape[1] + 10
-    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    num_features = df.shape[1]
+    folds = KFold(n_splits=n_splits, random_state=71, shuffle=True)
 
     def lr_scheduler(epoch):
         if epoch <= epochs * 0.8:
@@ -152,19 +150,7 @@ def cnn_train_model(
 
     model = tf.keras.models.Sequential([
         Input(shape=(num_features,)),
-        Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(256, kernel_initializer='glorot_uniform', activation="relu"),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(512, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(1024, kernel_initializer='glorot_uniform', activation="relu"),
         BatchNormalization(),
         Dropout(0.25),
 
@@ -196,41 +182,23 @@ def cnn_train_model(
 
     """callbacks"""
     callbacks = []
-    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
+    callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
 
     model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
     preds = np.zeros((test.shape[0], num_class))
     for trn_idx, val_idx in folds.split(df, target):
-        n = 10
-        pca = PCA(n_components=n)
-        pca.fit(df.iloc[trn_idx, :])
-        n_name = [f"pca{i}" for i in range(n)]
-
-        train_x = df.iloc[trn_idx, :]
-        # memo = pd.DataFrame(pca.transform(train_x), columns=n_name)
-        train_x = pd.concat([train_x, pd.DataFrame(pca.transform(train_x), columns=n_name)], axis=1,
-                            join_axes=[train_x.index]).values
-
-        val_x = df.iloc[val_idx]
-        val_x = pd.concat([val_x, pd.DataFrame(pca.transform(val_x), columns=n_name)], axis=1,
-                          join_axes=[val_x.index]).values
-
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
-
-        train_x = np.nan_to_num(train_x)
-        val_x = np.nan_to_num(val_x)
 
         # train_x = np.reshape(train_x, (-1, num_features, 1))
         # val_x = np.reshape(val_x, (-1, num_features, 1))
         model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
                   callbacks=callbacks)
-
-        new_test = pd.concat([test, pd.DataFrame(pca.transform(test), columns=n_name)], axis=1,
-                             join_axes=[test.index])
-        preds += model.predict(new_test.values) / 5
+        preds += model.predict(test.values) / n_splits
     print(
         "\nIf you want to watch TF Board, you should enter the command."
         "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
