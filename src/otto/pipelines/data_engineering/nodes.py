@@ -35,6 +35,12 @@ from typing import Any, Dict
 import umap
 import numpy as np
 from scipy.sparse.csgraph import connected_components
+from sklearn.model_selection import KFold
+from sklearn.metrics import log_loss
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_predict
+
 from sklearn.decomposition import PCA
 import cuml.manifold    as tsne_rapids
 import os
@@ -71,7 +77,7 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     return con_df, target
 
 
-def split_data(df, df_tsne, df_umap, df_pca, df_features, target):
+def split_data(df, df_tsne, df_umap, df_pca, df_features, df_knn, target):
     # df = np.log1p(df)
     # df = pd.concat([df, df_pca], axis=1, join="inner")
 
@@ -79,10 +85,11 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, target):
     df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
     df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
     df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
+    # df = pd.concat([df.reset_index(drop=True), df_knn.reset_index(drop=True)], axis=1)
 
-        # df = df_pca.copy()
+    # df = df_pca.copy()
 
-        # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
+    # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
     df = pd.concat([df.reset_index(drop=True), df_features.reset_index(drop=True)], axis=1)
     train_df = df[:len(target)]
     test_df = df[len(target):]
@@ -122,6 +129,7 @@ def do_pca(df: pd.DataFrame, target: pd.Series):
     df_pca = pd.DataFrame(df_pca, columns=n_name)
     return df_pca
 
+
 def do_tSNE(df: pd.DataFrame, target: pd.Series):
     """
     https://www.kaggle.com/titericz/t-sne-visualization-with-rapids
@@ -129,9 +137,45 @@ def do_tSNE(df: pd.DataFrame, target: pd.Series):
     tsne = tsne_rapids.TSNE(n_components=2, perplexity=30, verbose=2)
     # tsne.fit(df[:len(target)])
     df_tsne = tsne.fit_transform(df.values)
-    plt.scatter(df_tsne[:len(target), 0], df_tsne[:len(target), 1], c=target, s=0.5)
-    plt.show()
-    return pd.DataFrame(df_tsne, columns=["tsne_1", "tsne_2"])
+    n_name = [f"tsne{i}" for i in range(2)]
+
+    # plt.scatter(df_tsne[:len(target), 0], df_tsne[:len(target), 1], c=target, s=0.5)
+    # plt.show()
+    return pd.DataFrame(df_tsne, columns=n_name)
+
+
+def knn_train_model(
+        df: pd.DataFrame, target: pd.DataFrame
+):
+    # n_splits = 5
+    # folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    #
+    # oof = np.zeros((df.shape[0], 9))
+    #
+    # for trn_idx, val_idx in folds.split(df[:len(target)], target):
+    #     train_x = df.iloc[trn_idx, :].values
+    #     val_x = df.iloc[val_idx, :].values
+    #     train_y = target[trn_idx].values
+    #     val_y = target[val_idx].values
+    #
+    #     classifier = KNeighborsClassifier(n_neighbors=1024, n_jobs=12)
+    #     classifier.fit(train_x, train_y)
+    #
+    #     y_hat = classifier.predict_proba(val_x)
+    #
+    #     print(log_loss(val_y, y_hat))
+    #     print(oof.shape, y_hat.shape)
+    #     oof[val_idx, :] = y_hat
+    #     pred = classifier.predict_proba(df[len(target):])
+    #
+    #     oof[len(target):, :] = pred / n_splits
+    #
+    # print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i)for i in range(9)]
+    oof = pd.DataFrame(oof, columns=n_name)
+    return oof
 
 
 def make_features(df: pd.DataFrame):

@@ -40,6 +40,9 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from sklearn.decomposition import PCA
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_predict
+from sklearn.metrics import log_loss
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Conv1D
@@ -104,7 +107,7 @@ def lgbm_train_model(
         # "bagging_freq": 5,
         "learning_rate": parameters["learning_rate"],
         "metric": "multi_logloss",
-        #         "num_leaves": 16,
+        "num_leaves": 12,
         # "subsample": 0.7,
         "verbose": -1
     }
@@ -125,7 +128,7 @@ def lgbm_train_model(
     return clf
 
 
-def cnn_train_model(
+def nn_train_model(
         df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict[str, Any]
 ):
     """
@@ -150,29 +153,39 @@ def cnn_train_model(
 
     model = tf.keras.models.Sequential([
         Input(shape=(num_features,)),
-        Dense(1024, kernel_initializer='glorot_uniform', activation="relu"),
+
+        Dense(1024, kernel_initializer='glorot_uniform'),
+        PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(512, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(512, kernel_initializer='glorot_uniform', ),
+        PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(256, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(256, kernel_initializer='glorot_uniform', ),
+        PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(128, kernel_initializer='glorot_uniform', ),
+        PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(128, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(128, kernel_initializer='glorot_uniform'),
+        PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
+        Dense(64, kernel_initializer='glorot_uniform', ),
         BatchNormalization(),
         Dropout(0.25),
+
+        # Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
+        # BatchNormalization(),
+        # Dropout(0.25),
 
         Dense(num_class, activation="softmax")
     ])
@@ -180,11 +193,19 @@ def cnn_train_model(
     print(model.summary())
     optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
 
+    init_weights1 = model.get_weights()
+
     """callbacks"""
     callbacks = []
     callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
+    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(1e-3 / 3 ** (ep * 4 // epochs))))
+
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
+
+    print(
+        "\nIf you want to watch TF Board, you should enter the command."
+        "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
 
     model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
     preds = np.zeros((test.shape[0], num_class))
@@ -199,11 +220,15 @@ def cnn_train_model(
         model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
                   callbacks=callbacks)
         preds += model.predict(test.values) / n_splits
+        model.set_weights(init_weights1)
     print(
         "\nIf you want to watch TF Board, you should enter the command."
         "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
 
     return preds
+
+
+
 
 
 def get_features(preds, df):
