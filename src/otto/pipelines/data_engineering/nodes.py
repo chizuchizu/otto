@@ -134,7 +134,7 @@ def do_tSNE(df: pd.DataFrame, target: pd.Series):
     """
     https://www.kaggle.com/titericz/t-sne-visualization-with-rapids
     """
-    tsne = tsne_rapids.TSNE(n_components=2, perplexity=30, verbose=2)
+    tsne = tsne_rapids.TSNE(n_components=2, perplexity=20, verbose=2)
     # tsne.fit(df[:len(target)])
     df_tsne = tsne.fit_transform(df.values)
     n_name = [f"tsne{i}" for i in range(2)]
