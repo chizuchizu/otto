@@ -9,3 +9,4 @@ n_jobs: 10
 objective: "multi:softmax"
 metric: "mlogloss"
 gpu: True
+n_neighbors: 2048

@@ -40,12 +40,13 @@ from sklearn.metrics import log_loss
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
-
+from datetime import datetime
 from sklearn.decomposition import PCA
 import cuml.manifold    as tsne_rapids
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
 import warnings
 
 warnings.simplefilter('ignore')
@@ -77,7 +78,7 @@ def docking(train: pd.DataFrame, test: pd.DataFrame) -> [pd.DataFrame, pd.Series
     return con_df, target
 
 
-def split_data(df, df_tsne, df_umap, df_pca, df_features, df_knn, target):
+def split_data(df, df_tsne, df_umap, df_pca, df_features, df_kmeans, target):
     # df = np.log1p(df)
     # df = pd.concat([df, df_pca], axis=1, join="inner")
 
@@ -85,7 +86,7 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_knn, target):
     df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
     df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
     df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
-    # df = pd.concat([df.reset_index(drop=True), df_knn.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_kmeans.reset_index(drop=True)], axis=1)
 
     # df = df_pca.copy()
 
@@ -95,7 +96,16 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_knn, target):
     test_df = df[len(target):]
     df.to_csv("data/04_features/train2_csv", index=False)
 
-    return train_df, test_df
+    oof_path = datetime.today()
+
+    return train_df, test_df, oof_path
+
+
+def do_kmeans(df: pd.DataFrame, target: pd.Series):
+    kmeans = KMeans(n_clusters=8, n_jobs=13, random_state=42)
+    kmeans.fit(df[:len(target)].values)
+    memo = kmeans.transform(df.values)
+    return pd.DataFrame(memo)
 
 
 def do_umap(df: pd.DataFrame, target: pd.Series, parameters: Dict):
@@ -173,7 +183,7 @@ def knn_train_model(
     # print(oof.shape)
     # np.save("data/04_features/oof.npz", oof)
     oof = np.load("data/04_features/oof.npy")
-    n_name = ["knn_{}".format(i)for i in range(9)]
+    n_name = ["knn_{}".format(i) for i in range(9)]
     oof = pd.DataFrame(oof, columns=n_name)
     return oof
 

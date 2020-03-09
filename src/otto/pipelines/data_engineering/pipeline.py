@@ -45,9 +45,9 @@ def create_pipeline(**kwargs):
                 ["df", "target"],
             ),
             node(
-                knn_train_model,
+                do_kmeans,
                 ["df", "target"],
-                "df_knn"
+                "df_kmeans"
             ),
             node(
                 do_tSNE,
@@ -71,8 +71,8 @@ def create_pipeline(**kwargs):
             ),
             node(
                 split_data,
-                ["df", "df_tsne", "df_umap", "df_pca", "df_features", "df_knn", "target"],
-                ["df_train", "df_test"]
+                ["df", "df_tsne", "df_umap", "df_pca", "df_features", "df_kmeans", "target"],
+                ["df_train", "df_test", "oof_path"]
             )
         ]
     )

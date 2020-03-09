@@ -33,7 +33,48 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 
 from kedro.pipeline import Pipeline, node
 
-from .nodes import predict, xgb_train_model, lgbm_train_model, make_submit_file, nn_train_model
+from .nodes import *
+
+"""
+NN model
+            node(
+                nn_train_model,
+                ["df_train", "target", "df_test", "parameters"],
+                "nn_pred"
+            ),
+            node(
+                make_submit_file,
+                ["nn_pred", "sample_submission"],
+                None
+                
+LGBM model
+            node(
+                lgbm_train_model,
+                ["df_train", "target", "test", "parameters"],
+                "lgb_model"
+            ),
+            node(
+                predict,
+                ["lgb_model", "df_test"],
+                "lgb_pred"
+            ),
+            node(
+                make_submit_file,
+                ["lgb_pred", "sample_submission"],
+                None
+
+knn_model
+            node(
+                knn_train_model,
+                ["df_train", "target", "df_test", "parameters"],
+                "knn_pred"
+            ),
+            node(
+                make_submit_file,
+                ["knn_pred", "sample_submission"],
+                None
+            )
+"""
 
 
 def create_pipeline(**kwargs):
@@ -44,16 +85,6 @@ def create_pipeline(**kwargs):
                 ["df_train", "target", "df_test", "parameters"],
                 "nn_pred"
             ),
-            # node(
-            #     lgbm_train_model,
-            #     ["df_train", "target", "parameters"],
-            #     "lgb_model"
-            # ),
-            # node(
-            #     predict,
-            #     ["lgb_model", "df_test"],
-            #     "lgb_pred"
-            # ),
             node(
                 make_submit_file,
                 ["nn_pred", "sample_submission"],

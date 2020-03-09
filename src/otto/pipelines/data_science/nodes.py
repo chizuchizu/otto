@@ -39,9 +39,13 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from rgf.sklearn import RGFClassifier
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.model_selection import train_test_split
+
 from sklearn.metrics import log_loss
 
 from tensorflow.keras.layers import Input
@@ -52,6 +56,9 @@ from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import AveragePooling1D
 from tensorflow.keras.layers import Dropout
+from tensorflow.keras import backend as K
+# from keras_radam import RAdam
+from tensorflow.keras.optimizers import SGD, Adam, Optimizer
 
 from tensorflow.keras.constraints import max_norm
 from tensorflow.keras import regularizers
@@ -59,7 +66,7 @@ import os
 import lightgbm as lgb
 import matplotlib.pyplot as plt
 from datetime import datetime
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 import xgboost as xgb
 import shap
 
@@ -96,7 +103,7 @@ def xgb_train_model(
 
 
 def lgbm_train_model(
-        train_x: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
+        train_x: pd.DataFrame, target: pd.DataFrame, test, parameters: Dict[str, Any]
 ):
     lgb_train = lgb.Dataset(train_x, target)
 
@@ -111,16 +118,41 @@ def lgbm_train_model(
         # "subsample": 0.7,
         "verbose": -1
     }
+
+    extraction_cb = ModelExtractionCallback()
+    callbacks = [
+        extraction_cb,
+    ]
+
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
     gbdt = lgb.cv(lgbm_params,
                   lgb_train,
-                  nfold=5,
+                  folds=folds,
                   early_stopping_rounds=100,
                   num_boost_round=2000,
-                  verbose_eval=100
+                  verbose_eval=100,
+                  callbacks=callbacks
                   )
     print("Best num_boost_round: ", len(gbdt["multi_logloss-mean"]))
     clf = lgb.train(lgbm_params, lgb_train, num_boost_round=len(gbdt["multi_logloss-mean"]), verbose_eval=100)
     print("DONE")
+
+    boosters = extraction_cb.raw_boosters
+    best_iteration = extraction_cb.best_iteration
+
+    # Create oof prediction result
+    fold_iter = folds.split(train_x, target)
+    oof_preds = np.zeros((train_x.shape[0] + test.shape[0], 9))
+    for n_fold, ((trn_idx, val_idx), booster) in enumerate(zip(fold_iter, boosters)):
+        # print(val_idx)
+        valid = train_x.iloc[val_idx, :].values
+        oof_preds[val_idx, :] = booster.predict(valid, num_iteration=best_iteration)
+        oof_preds[len(target):, :] += booster.predict(test.values, num_iteration=best_iteration) / 5
+        print(n_fold, "DONE")
+    oof = pd.DataFrame(oof_preds)
+    oof.to_csv("data/09_oof/lgbm_{}.csv".format("normal"))
+
     clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
 
     lgb.plot_importance(clf, max_num_features=20, importance_type="gain")
@@ -143,7 +175,7 @@ def nn_train_model(
     lr_init = 0.01
     bs = 256
     num_features = df.shape[1]
-    folds = KFold(n_splits=n_splits, random_state=71, shuffle=True)
+    folds = StratifiedKFold(n_splits=n_splits, random_state=71, shuffle=True)
 
     def lr_scheduler(epoch):
         if epoch <= epochs * 0.8:
@@ -154,35 +186,37 @@ def nn_train_model(
     model = tf.keras.models.Sequential([
         Input(shape=(num_features,)),
 
-        Dense(1024, kernel_initializer='glorot_uniform'),
+        Dense(2 ** 10, kernel_initializer='glorot_uniform'),
+        PReLU(),
+        BatchNormalization(),
+        Dropout(0.4),
+
+        Dense(2 ** 9, kernel_initializer='glorot_uniform', ),
+        PReLU(),
+        BatchNormalization(),
+        Dropout(0.2),
+
+        # Dense(2 ** 8, kernel_initializer='glorot_uniform', ),
+        # PReLU(),
+        # BatchNormalization(),
+        # Dropout(0.2),
+        #
+        # Dense(2 ** 7, kernel_initializer='glorot_uniform', ),
+        # PReLU(),
+        # BatchNormalization(),
+        # Dropout(0.2),
+
+        Dense(2 ** 7, kernel_initializer='glorot_uniform'),
         PReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
-        Dense(512, kernel_initializer='glorot_uniform', ),
-        PReLU(),
-        BatchNormalization(),
-        Dropout(0.25),
+        # Dense(2 ** 6, kernel_initializer='glorot_uniform'),
+        # PReLU(),
+        # BatchNormalization(),
+        # Dropout(0.25),
 
-        Dense(256, kernel_initializer='glorot_uniform', ),
-        PReLU(),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(128, kernel_initializer='glorot_uniform', ),
-        PReLU(),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(128, kernel_initializer='glorot_uniform'),
-        PReLU(),
-        BatchNormalization(),
-        Dropout(0.25),
-
-        Dense(64, kernel_initializer='glorot_uniform', ),
-        BatchNormalization(),
-        Dropout(0.25),
-
+        # ｒ
         # Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
         # BatchNormalization(),
         # Dropout(0.25),
@@ -192,16 +226,18 @@ def nn_train_model(
 
     print(model.summary())
     optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
+    # optimizer = SGD(learning_rate=lr_init)
 
     init_weights1 = model.get_weights()
 
     """callbacks"""
     callbacks = []
     callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
-    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(1e-3 / 3 ** (ep * 4 // epochs))))
+    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(lr_init / 3 ** (ep * 4 // epochs))))
 
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
+    callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=25, verbose=1, mode='auto'))
 
     print(
         "\nIf you want to watch TF Board, you should enter the command."
@@ -209,6 +245,7 @@ def nn_train_model(
 
     model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
     preds = np.zeros((test.shape[0], num_class))
+    oof = np.zeros((df.shape[0] + test.shape[0], num_class))
     for trn_idx, val_idx in folds.split(df, target):
         train_x = df.iloc[trn_idx, :].values
         val_x = df.iloc[val_idx, :].values
@@ -219,23 +256,131 @@ def nn_train_model(
         # val_x = np.reshape(val_x, (-1, num_features, 1))
         model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
                   callbacks=callbacks)
-        preds += model.predict(test.values) / n_splits
+        # preds += model.predict(test.values) / n_splits
+        oof[val_idx] = model.predict(val_x)
+        oof[len(target):] += model.predict(test.values) / n_splits
         model.set_weights(init_weights1)
+
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_3"))
+
     print(
         "\nIf you want to watch TF Board, you should enter the command."
         "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
 
-    return preds
+    return oof[:len(target)].values
 
 
+def knn_train_model(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
+):
+    n_splits = 5
+    n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        classifier = KNeighborsClassifier(n_neighbors=n_neighbors, n_jobs=14)
+        classifier.fit(train_x, train_y)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx, :] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    # oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i) for i in range(9)]
+    oof = pd.DataFrame(oof, columns=n_name)
+    oof.to_csv("data/09_oof/knn_{}.csv".format(n_neighbors))
+    return oof[len(target):].values
 
 
+def extratrees(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
+):
+    n_splits = 5
+    # n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-def get_features(preds, df):
-    return None
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
 
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
 
-def predict(model, test_x: pd.DataFrame) -> np.ndarray:
+        classifier = ExtraTreesClassifier(n_jobs=14, n_estimators=200)
+        classifier.fit(train_x, train_y)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    # oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i) for i in range(9)]
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/extra_{}.csv".format("3"))
+    return oof[len(target):].values
+
+def rgf(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
+):
+    n_splits = 5
+    # n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        classifier = RGFClassifier(n_jobs=14,
+                                   algorithm="RGF",
+                                   loss="Log",
+                                   )
+        classifier.fit(train_x, train_y)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    # oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i) for i in range(9)]
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/rgf_{}.csv".format(3))
+    return oof[len(target):].values
+
+def predict(model, test_x) -> np.ndarray:
     """Node for making predictions given a pre-trained model and a test set.
     """
     pred = model.predict(test_x)
@@ -253,3 +398,39 @@ def features_importance(model, df: pd.DataFrame):
     importance = pd.DataFrame(model.features_importance(importance_type="gain"), index=df.columns,
                               columns=["importance"])
     print(importance.head(20))
+
+
+class ModelExtractionCallback(object):
+    """Callback class for retrieving trained model from lightgbm.cv()
+    NOTE: This class depends on '_CVBooster' which is hidden class, so it might doesn't work if the specification is changed.
+    """
+
+    def __init__(self):
+        self._model = None
+
+    def __call__(self, env):
+        # Saving _CVBooster object.
+        self._model = env.model
+
+    def _assert_called_cb(self):
+        if self._model is None:
+            # Throw exception if the callback class is not called.
+            raise RuntimeError('callback has not called yet')
+
+    @property
+    def boosters_proxy(self):
+        self._assert_called_cb()
+        # return Booster object
+        return self._model
+
+    @property
+    def raw_boosters(self):
+        self._assert_called_cb()
+        # return list of Booster
+        return self._model.boosters
+
+    @property
+    def best_iteration(self):
+        self._assert_called_cb()
+        # return boosting round when early stopping.
+        return self._model.best_iteration
