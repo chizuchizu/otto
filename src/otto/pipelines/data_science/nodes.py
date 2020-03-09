@@ -50,7 +50,7 @@ from sklearn.metrics import log_loss
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Conv1D
-from tensorflow.keras.layers import Reshape, LayerNormalization, PReLU
+from tensorflow.keras.layers import Reshape, LayerNormalization, PReLU, ReLU
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
@@ -151,7 +151,7 @@ def lgbm_train_model(
         oof_preds[len(target):, :] += booster.predict(test.values, num_iteration=best_iteration) / 5
         print(n_fold, "DONE")
     oof = pd.DataFrame(oof_preds)
-    oof.to_csv("data/09_oof/lgbm_{}.csv".format("normal"))
+    oof.to_csv("data/09_oof/lgbm_{}.csv".format("normal_2"))
 
     clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
 
@@ -187,12 +187,12 @@ def nn_train_model(
         Input(shape=(num_features,)),
 
         Dense(2 ** 10, kernel_initializer='glorot_uniform'),
-        PReLU(),
+        ReLU(),
         BatchNormalization(),
         Dropout(0.4),
 
         Dense(2 ** 9, kernel_initializer='glorot_uniform', ),
-        PReLU(),
+        ReLU(),
         BatchNormalization(),
         Dropout(0.2),
 
@@ -207,7 +207,7 @@ def nn_train_model(
         # Dropout(0.2),
 
         Dense(2 ** 7, kernel_initializer='glorot_uniform'),
-        PReLU(),
+        ReLU(),
         BatchNormalization(),
         Dropout(0.25),
 
@@ -262,13 +262,13 @@ def nn_train_model(
         model.set_weights(init_weights1)
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_3"))
+    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_6"))
 
     print(
         "\nIf you want to watch TF Board, you should enter the command."
         "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
 
-    return oof[:len(target)].values
+    return oof[len(target):].values
 
 
 def knn_train_model(

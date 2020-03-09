@@ -50,7 +50,7 @@ NN model
 LGBM model
             node(
                 lgbm_train_model,
-                ["df_train", "target", "test", "parameters"],
+                ["df_train", "target", "df_test", "parameters"],
                 "lgb_model"
             ),
             node(

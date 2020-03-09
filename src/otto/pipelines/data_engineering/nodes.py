@@ -83,10 +83,11 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_kmeans, target):
     # df = pd.concat([df, df_pca], axis=1, join="inner")
 
     # df = pd.concat([df, df_pca], axis=1, join_axes=[df.index])
-    df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
-    df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
-    df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
-    df = pd.concat([df.reset_index(drop=True), df_kmeans.reset_index(drop=True)], axis=1)
+
+    # df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
+    # df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
+    # df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
+    # df = pd.concat([df.reset_index(drop=True), df_kmeans.reset_index(drop=True)], axis=1)
 
     # df = df_pca.copy()
 
