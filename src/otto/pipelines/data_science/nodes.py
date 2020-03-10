@@ -44,7 +44,7 @@ import optuna
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier, AdaBoostClassifier
 from sklearn.model_selection import train_test_split
 
 from sklearn.metrics import log_loss
@@ -305,7 +305,7 @@ def knn_train_model(
     return oof[len(target):].values
 
 
-def extratrees(
+def Ada(
         df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
 ):
     n_splits = 5
@@ -320,7 +320,10 @@ def extratrees(
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
 
-        classifier = ExtraTreesClassifier(n_jobs=14, n_estimators=200)
+        classifier = AdaBoostClassifier(n_estimators=50,
+                                        learning_rate=1,
+                                        algorithm="SAMME.R",
+                                        random_state=12345)
         classifier.fit(train_x, train_y)
 
         y_hat = classifier.predict_proba(val_x)
@@ -337,7 +340,43 @@ def extratrees(
     # oof = np.load("data/04_features/oof.npy")
     n_name = ["knn_{}".format(i) for i in range(9)]
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/extra_{}.csv".format("3"))
+    oof.to_csv("data/09_oof/ada_{}.csv".format("2"))
+    return oof[len(target):].values
+
+
+def extratrees(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
+):
+    n_splits = 5
+    # n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        classifier = ExtraTreesClassifier(n_jobs=14, n_estimators=100, max_depth=10)
+        classifier.fit(train_x, train_y)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    # oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i) for i in range(9)]
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/extra_{}.csv".format("5"))
     return oof[len(target):].values
 
 
@@ -356,7 +395,10 @@ def rf(
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
 
-        classifier = RandomForestClassifier(n_jobs=14, n_estimators=200)
+        classifier = RandomForestClassifier(n_jobs=14, n_estimators=1000,
+                                            min_samples_leaf=1,
+                                            max_features="auto",
+                                            criterion="gini")
         classifier.fit(train_x, train_y)
 
         y_hat = classifier.predict_proba(val_x)
@@ -373,7 +415,7 @@ def rf(
     # oof = np.load("data/04_features/oof.npy")
     n_name = ["knn_{}".format(i) for i in range(9)]
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/rf_{}.csv".format("1"))
+    oof.to_csv("data/09_oof/rf_{}.csv".format("2"))
     return oof[len(target):].values
 
 
@@ -470,6 +512,102 @@ def stacking(train, target, test, parameters):
     return test_pred
 
 
+def stacking_NN(train, target, test, parameters):
+    n_splits = 5
+    num_class = 9
+    epochs = 20
+    lr_init = 0.01
+    bs = 256
+    folds = StratifiedKFold(n_splits=n_splits, random_state=71, shuffle=True)
+
+    path = "data/09_oof/"
+    df_train = train.copy()
+    df_test = test.copy()
+    for x in parameters["model_list"]:
+        oof_data = pd.DataFrame(pd.read_csv(path + x + ".csv").iloc[:, 1:].values)
+        df_train = pd.concat([df_train.reset_index(drop=True), oof_data[:len(target)].reset_index(drop=True)], axis=1)
+        df_test = pd.concat([df_test.reset_index(drop=True), oof_data[len(target):].reset_index(drop=True)], axis=1)
+
+    num_features = df_train.shape[1]
+
+    def lr_scheduler(epoch):
+        if epoch <= epochs * 0.8:
+            return lr_init
+        else:
+            return lr_init * 0.1
+
+    model = tf.keras.models.Sequential([
+        Input(shape=(num_features,)),
+
+        Dense(2 ** 10, kernel_initializer='glorot_uniform'),
+        ReLU(),
+        BatchNormalization(),
+        Dropout(0.5),
+
+        Dense(2 ** 9, kernel_initializer='glorot_uniform', ),
+        ReLU(),
+        BatchNormalization(),
+        Dropout(0.5),
+
+        Dense(2 ** 7, kernel_initializer='glorot_uniform'),
+        ReLU(),
+        BatchNormalization(),
+        Dropout(0.5),
+
+        Dense(2 ** 6, kernel_initializer='glorot_uniform'),
+        PReLU(),
+        BatchNormalization(),
+        Dropout(0.25),
+
+        # ｒ
+        # Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
+        # BatchNormalization(),
+        # Dropout(0.25),
+
+        Dense(num_class, activation="softmax")
+    ])
+
+    print(model.summary())
+    optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
+    # optimizer = SGD(learning_rate=lr_init)
+
+    init_weights1 = model.get_weights()
+
+    """callbacks"""
+    callbacks = []
+    callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
+    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(lr_init / 3 ** (ep * 4 // epochs))))
+
+    log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
+    callbacks.append(tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=25, verbose=1, mode='auto'))
+
+    print(
+        "\nIf you want to watch TF Board, you should enter the command."
+        "\n%load_ext tensorboard\n%tensorboard --logdir {}\n".format(log_dir))
+
+    model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
+    preds = np.zeros((df_test.shape[0], num_class))
+    # oof = np.zeros((train.shape[0] + test.shape[0], num_class))
+    for trn_idx, val_idx in folds.split(df_train, target):
+        train_x = df_train.iloc[trn_idx, :].values
+        val_x = df_train.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        # train_x = np.reshape(train_x, (-1, num_features, 1))
+        # val_x = np.reshape(val_x, (-1, num_features, 1))
+        model.fit(train_x, train_y, validation_data=(val_x, val_y), epochs=epochs, verbose=2, batch_size=bs,
+                  callbacks=callbacks)
+        # preds += model.predict(test.values) / n_splits
+        # oof[val_idx] = model.predict(val_x)
+        # oof[len(target):] += model.predict(test.values) / n_splits
+        preds += model.predict(df_test.values) / n_splits
+        model.set_weights(init_weights1)
+
+    return preds
+
+
 def cat_boost(
         train, target, test, parameters
 ):
@@ -480,13 +618,20 @@ def cat_boost(
     oof = np.zeros((train.shape[0] + test.shape[0], 9))
 
     model = CatBoostClassifier(
-        learning_rate=0.01,
-        depth=7,
+        # learning_rate=0.01,
+        depth=11,
         task_type="GPU",
         loss_function="MultiClass",
         verbose=200,
-        l2_leaf_reg=2
+        l2_leaf_reg=1,
+        random_strength=2,
+        bagging_temperature=0.6499735309792984,
+        iterations=440,
+        od_wait=45,
+        # od_type="incToDec"
     )
+    params = {'iterations': 440, 'depth': 11, 'l2_leaf_reg': 1, 'random_strength': 2,
+              'bagging_temperature': 0.6499735309792984, 'od_type': 'IncToDec', 'od_wait': 45}
 
     for trn_idx, val_idx in folds.split(train, target):
         train_x = train.iloc[trn_idx, :].values
@@ -497,19 +642,19 @@ def cat_boost(
         train_pool = Pool(data=train_x, label=train_y)
         val_pool = Pool(data=val_x, label=val_y)
 
-        classifier = model.fit(train_pool, eval_set=(val_x, val_y), use_best_model=True)
+        model.fit(train_pool, eval_set=val_pool)
 
-        y_hat = classifier.predict_proba(val_x)
+        y_hat = model.predict_proba(val_x)
 
         print(log_loss(val_y, y_hat))
         print(oof.shape, y_hat.shape)
         oof[val_idx] = y_hat
-        pred = classifier.predict_proba(test.values)
+        pred = model.predict_proba(test.values)
 
         oof[len(target):, :] += pred / n_splits
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/cb_{}.csv".format(1))
+    oof.to_csv("data/09_oof/cb_{}.csv".format(2))
     return oof[len(target):]
 
 
@@ -524,7 +669,7 @@ def catb_optuna(
         params = {
             'iterations': trial.suggest_int('iterations', 50, 500),
             'depth': trial.suggest_int('depth', 6, 12),
-            "l2_leaf_reg":trial.suggest_int("l2_leaf_reg", 1, 100),
+            "l2_leaf_reg": trial.suggest_int("l2_leaf_reg", 1, 100),
             # 'learning_rate': 0.03,
             "task_type": "GPU",
             "loss_function": "MultiClass",
