@@ -713,6 +713,65 @@ def catb_optuna(
     print(study.best_trial)
 
 
+def stacking_xgb(
+        df: pd.DataFrame, target: pd.DataFrame, test, parameters: Dict[str, Any]
+):
+    # kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    # test_x = df.iloc[len(target):, :]
+    path = "data/09_oof/"
+    df_train = df.copy()
+    df_test = test.copy()
+    for x in parameters["model_list"]:
+        oof_data = pd.DataFrame(pd.read_csv(path + x + ".csv").iloc[:, 1:].values)
+        df_train = pd.concat([df_train.reset_index(drop=True), oof_data[:len(target)].reset_index(drop=True)], axis=1)
+        df_test = pd.concat([df_test.reset_index(drop=True), oof_data[len(target):].reset_index(drop=True)], axis=1)
+
+
+    xgb_param = {
+        "max_depth": parameters["max_depth"],
+        "learning_rate": parameters["learning_rate"],
+        # "n_jobs": parameters["n_jobs"],
+        "objective": parameters["objective"],
+        "subsample": 0.8,
+        "min_child_weight": 5,
+        "booster": "gbtree",
+        "num_class": 9,
+        "num_leaves": 64,
+        "n_estimators": 1000
+    }
+    if parameters["gpu"]:
+        xgb_param["device"] = "gpu"
+        xgb_param["tree_method"] = "gpu_hist"
+        xgb_param["max_bin"] = 32
+    n_splits = 5
+    n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    # oof = np.zeros((df.shape[0] + test.shape[0], 9))
+    pred = np.zeros((test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df_train, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        clf = xgb.XGBClassifier(**xgb_param)
+        clf.fit(train_x, train_y,
+                eval_set=[(train_x, train_y), (val_x, val_y)],
+                eval_metric="mlogloss",
+                verbose=200,
+                early_stopping_rounds=500
+                )
+
+        # bst = xgb.train(params=xgb_param, dtrain=dtrain, evals=[(dtest, "eval")], early_stopping_rounds=300, num_boost_round=500,
+        #                 verbose_eval=500)
+        pred += clf.predict_proba(df_test.values) / n_splits
+
+    return pred
+
+
 def make_submit_file(pred: np.ndarray, ss: pd.DataFrame) -> None:
     save_path = "data/07_model_output/{}.csv".format(datetime.today())
     ss.iloc[:, 1:] = pred
