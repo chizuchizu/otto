@@ -84,10 +84,10 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_kmeans, target):
 
     # df = pd.concat([df, df_pca], axis=1, join_axes=[df.index])
 
-    # df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
-    # df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
-    # df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
-    # df = pd.concat([df.reset_index(drop=True), df_kmeans.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_tsne.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_pca.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_umap.reset_index(drop=True)], axis=1)
+    df = pd.concat([df.reset_index(drop=True), df_kmeans.reset_index(drop=True)], axis=1)
 
     # df = df_pca.copy()
 
@@ -103,7 +103,7 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_kmeans, target):
 
 
 def do_kmeans(df: pd.DataFrame, target: pd.Series):
-    kmeans = KMeans(n_clusters=8, n_jobs=13, random_state=42)
+    kmeans = KMeans(n_clusters=2, n_jobs=13, random_state=42)
     kmeans.fit(df[:len(target)].values)
     memo = kmeans.transform(df.values)
     return pd.DataFrame(memo)
@@ -155,42 +155,13 @@ def do_tSNE(df: pd.DataFrame, target: pd.Series):
     return pd.DataFrame(df_tsne, columns=n_name)
 
 
-def knn_train_model(
-        df: pd.DataFrame, target: pd.DataFrame
-):
-    # n_splits = 5
-    # folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    #
-    # oof = np.zeros((df.shape[0], 9))
-    #
-    # for trn_idx, val_idx in folds.split(df[:len(target)], target):
-    #     train_x = df.iloc[trn_idx, :].values
-    #     val_x = df.iloc[val_idx, :].values
-    #     train_y = target[trn_idx].values
-    #     val_y = target[val_idx].values
-    #
-    #     classifier = KNeighborsClassifier(n_neighbors=1024, n_jobs=12)
-    #     classifier.fit(train_x, train_y)
-    #
-    #     y_hat = classifier.predict_proba(val_x)
-    #
-    #     print(log_loss(val_y, y_hat))
-    #     print(oof.shape, y_hat.shape)
-    #     oof[val_idx, :] = y_hat
-    #     pred = classifier.predict_proba(df[len(target):])
-    #
-    #     oof[len(target):, :] = pred / n_splits
-    #
-    # print(oof.shape)
-    # np.save("data/04_features/oof.npz", oof)
-    oof = np.load("data/04_features/oof.npy")
-    n_name = ["knn_{}".format(i) for i in range(9)]
-    oof = pd.DataFrame(oof, columns=n_name)
-    return oof
-
-
 def make_features(df: pd.DataFrame):
     memo = pd.DataFrame()
     memo["count_zero"] = df[df == 0].count(axis=1)
+    memo["count_one"] = df[df == 1].count(axis=1)
+    memo["count_two"] = df[df == 2].count(axis=1)
+
+    memo["max_val"] = df.sum(axis=1)
+    memo["sum_val"] = df.sum(axis=1)
     # memo["count_one"] = df[df == 1].count(axis=1)
     return memo

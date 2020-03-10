@@ -43,10 +43,11 @@ from rgf.sklearn import RGFClassifier
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 from sklearn.metrics import log_loss
+from catboost import CatBoostClassifier, Pool
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Conv1D
@@ -129,7 +130,7 @@ def lgbm_train_model(
     gbdt = lgb.cv(lgbm_params,
                   lgb_train,
                   folds=folds,
-                  early_stopping_rounds=100,
+                  early_stopping_rounds=300,
                   num_boost_round=2000,
                   verbose_eval=100,
                   callbacks=callbacks
@@ -151,7 +152,7 @@ def lgbm_train_model(
         oof_preds[len(target):, :] += booster.predict(test.values, num_iteration=best_iteration) / 5
         print(n_fold, "DONE")
     oof = pd.DataFrame(oof_preds)
-    oof.to_csv("data/09_oof/lgbm_{}.csv".format("normal_2"))
+    oof.to_csv("data/09_oof/lgbm_{}.csv".format("6"))
 
     clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
 
@@ -342,6 +343,43 @@ def extratrees(
     oof.to_csv("data/09_oof/extra_{}.csv".format("3"))
     return oof[len(target):].values
 
+
+def rf(
+        df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
+):
+    n_splits = 5
+    # n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        classifier = RandomForestClassifier(n_jobs=14, n_estimators=200)
+        classifier.fit(train_x, train_y)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    print(oof.shape)
+    # np.save("data/04_features/oof.npz", oof)
+    # oof = np.load("data/04_features/oof.npy")
+    n_name = ["knn_{}".format(i) for i in range(9)]
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/rf_{}.csv".format("1"))
+    return oof[len(target):].values
+
+
 def rgf(
         df: pd.DataFrame, target: pd.DataFrame, test: pd.DataFrame, parameters: Dict
 ):
@@ -380,12 +418,96 @@ def rgf(
     oof.to_csv("data/09_oof/rgf_{}.csv".format(3))
     return oof[len(target):].values
 
+
 def predict(model, test_x) -> np.ndarray:
     """Node for making predictions given a pre-trained model and a test set.
     """
     pred = model.predict(test_x)
     # Return the index of the class with max probability for all samples
     return pred
+
+
+def stacking(train, target, test, parameters):
+    path = "data/09_oof/"
+    df_train = train.copy()
+    df_test = test.copy()
+    for x in parameters["model_list"]:
+        oof_data = pd.DataFrame(pd.read_csv(path + x + ".csv").iloc[:, 1:].values)
+        df_train = pd.concat([df_train.reset_index(drop=True), oof_data[:len(target)].reset_index(drop=True)], axis=1)
+        df_test = pd.concat([df_test.reset_index(drop=True), oof_data[len(target):].reset_index(drop=True)], axis=1)
+
+    lgb_train = lgb.Dataset(df_train, target)
+
+    lgbm_params = {
+        "objective": "multiclass",
+        "num_class": 9,
+        "max_depth": -1,
+        # "bagging_freq": 5,
+        "learning_rate": 0.04,
+        "feature_fraction": 0.3,
+        "metric": "multi_logloss",
+        "num_leaves": 12,
+        # "subsample": 0.7,
+        "verbose": -1
+    }
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    gbdt = lgb.cv(lgbm_params,
+                  lgb_train,
+                  folds=folds,
+                  early_stopping_rounds=200,
+                  num_boost_round=2000,
+                  verbose_eval=100,
+                  )
+    print("Best num_boost_round: ", len(gbdt["multi_logloss-mean"]))
+    clf = lgb.train(lgbm_params, lgb_train, num_boost_round=len(gbdt["multi_logloss-mean"]), verbose_eval=100)
+
+    test_pred = clf.predict(df_test)
+    print("DONE")
+    return test_pred
+
+
+def cat_boost(
+        train, target, test, parameters
+):
+    n_splits = 5
+    # n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    oof = np.zeros((train.shape[0] + test.shape[0], 9))
+
+    model = CatBoostClassifier(
+        learning_rate=0.01,
+        depth=7,
+        task_type="GPU",
+        loss_function="MultiClass",
+        verbose=200,
+        l2_leaf_reg=2
+    )
+
+    for trn_idx, val_idx in folds.split(train, target):
+        train_x = train.iloc[trn_idx, :].values
+        val_x = train.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        train_pool = Pool(data=train_x, label=train_y)
+        val_pool = Pool(data=val_x, label=val_y)
+
+        classifier = model.fit(train_pool, eval_set=(val_x, val_y), use_best_model=True)
+
+        y_hat = classifier.predict_proba(val_x)
+
+        print(log_loss(val_y, y_hat))
+        print(oof.shape, y_hat.shape)
+        oof[val_idx] = y_hat
+        pred = classifier.predict_proba(test.values)
+
+        oof[len(target):, :] += pred / n_splits
+
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/cb_{}.csv".format(1))
+    return oof[len(target):]
 
 
 def make_submit_file(pred: np.ndarray, ss: pd.DataFrame) -> None:

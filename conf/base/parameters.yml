@@ -10,3 +10,12 @@ objective: "multi:softmax"
 metric: "mlogloss"
 gpu: True
 n_neighbors: 2048
+model_list: [
+  "knn_2", "knn_4", "knn_8", "knn_16", "knn_32", "knn_64", "knn_128", "knn_256", "knn_512", "knn_1024",
+  "lgbm_normal", "lgbm_normal_2",
+  "nn_normal", "nn_normal_2", "nn_normal_3", "nn_normal_4", "nn_normal_5",
+  "extra_1", "extra_2", "extra_3",
+  "rgf_1", "rgf_2", "rgf_3",
+  "rf_1",
+  "cb_1",
+]

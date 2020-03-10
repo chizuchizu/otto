@@ -81,14 +81,14 @@ def create_pipeline(**kwargs):
     return Pipeline(
         [
             node(
-                nn_train_model,
+                stacking,
                 ["df_train", "target", "df_test", "parameters"],
-                "nn_pred"
+                "knn_pred"
             ),
             node(
                 make_submit_file,
-                ["nn_pred", "sample_submission"],
+                ["knn_pred", "sample_submission"],
                 None
-            )
+            ),
         ]
     )
