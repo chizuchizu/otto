@@ -15,7 +15,7 @@ model_list: [
   "lgbm_normal", "lgbm_normal_2", "lgbm_3", "lgbm_4", "lgbm_6",
   "nn_normal", "nn_normal_2", "nn_normal_3", "nn_normal_4", "nn_normal_5", "nn_normal_7",
   "extra_1", "extra_2", "extra_3", "extra_4", "extra_5",
-  "rgf_1", "rgf_2", "rgf_3",
+  "rgf_1", "rgf_2", # "rgf_3",
   "rf_1", "rf_2",
   "cb_1", "cb_2",
   "nn_s1",

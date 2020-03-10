@@ -738,7 +738,10 @@ def stacking_xgb(
         "booster": "gbtree",
         "num_class": 9,
         "num_leaves": 64,
-        "n_estimators": 1000
+        "n_estimators": 3000,
+        "colsample_bytree": 0.5,
+        "colsample_bylevel": 0.5,
+        "colsample_bynode": 0.5
     }
     if parameters["gpu"]:
         xgb_param["device"] = "gpu"
@@ -752,8 +755,8 @@ def stacking_xgb(
     pred = np.zeros((test.shape[0], 9))
 
     for trn_idx, val_idx in folds.split(df_train, target):
-        train_x = df.iloc[trn_idx, :].values
-        val_x = df.iloc[val_idx, :].values
+        train_x = df_train.iloc[trn_idx, :].values
+        val_x = df_train.iloc[val_idx, :].values
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
 
