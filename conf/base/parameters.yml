@@ -4,16 +4,16 @@
 # `src/pipelines/`
 umap_path: "data/04_features/umap.npy"
 max_depth: 6
-learning_rate: 0.08
+learning_rate: 0.01
 n_jobs: 10
 objective: "multi:softmax"
 metric: "mlogloss"
 gpu: True
 n_neighbors: 2048
 model_list: [
-  "knn_2", "knn_4", "knn_8", "knn_16", "knn_32", "knn_64", "knn_128", "knn_256", "knn_512", "knn_1024",
-  "lgbm_normal", "lgbm_normal_2",
-  "nn_normal", "nn_normal_2", "nn_normal_3", "nn_normal_4", "nn_normal_5",
+  "knn_2", "knn_4", "knn_8", "knn_16", "knn_32", "knn_64", "knn_128", "knn_256", "knn_512", "knn_1024", "knn_2048",
+  "lgbm_normal", "lgbm_normal_2", "lgbm_3", "lgbm_4", "lgbm_6",
+  "nn_normal", "nn_normal_2", "nn_normal_3", "nn_normal_4", "nn_normal_5", "nn_normal_7",
   "extra_1", "extra_2", "extra_3",
   "rgf_1", "rgf_2", "rgf_3",
   "rf_1",

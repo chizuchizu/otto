@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from rgf.sklearn import RGFClassifier
+import optuna
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
@@ -120,6 +121,12 @@ def lgbm_train_model(
         "verbose": -1
     }
 
+    lgbm_params = {
+        'metric': 'multi_logloss', 'objective': 'multiclass', 'num_class': 9, 'verbosity': 1,
+        'feature_fraction': 0.4, 'num_leaves': 139, 'bagging_fraction': 0.8254401463359962, 'bagging_freq': 3,
+        'lambda_l1': 0.02563829140437355, 'lambda_l2': 9.594334397031103, 'min_child_samples': 100
+    }
+
     extraction_cb = ModelExtractionCallback()
     callbacks = [
         extraction_cb,
@@ -152,7 +159,7 @@ def lgbm_train_model(
         oof_preds[len(target):, :] += booster.predict(test.values, num_iteration=best_iteration) / 5
         print(n_fold, "DONE")
     oof = pd.DataFrame(oof_preds)
-    oof.to_csv("data/09_oof/lgbm_{}.csv".format("6"))
+    oof.to_csv("data/09_oof/lgbm_{}.csv".format("4"))
 
     clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
 
@@ -190,32 +197,22 @@ def nn_train_model(
         Dense(2 ** 10, kernel_initializer='glorot_uniform'),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.4),
+        Dropout(0.5),
 
         Dense(2 ** 9, kernel_initializer='glorot_uniform', ),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.2),
-
-        # Dense(2 ** 8, kernel_initializer='glorot_uniform', ),
-        # PReLU(),
-        # BatchNormalization(),
-        # Dropout(0.2),
-        #
-        # Dense(2 ** 7, kernel_initializer='glorot_uniform', ),
-        # PReLU(),
-        # BatchNormalization(),
-        # Dropout(0.2),
+        Dropout(0.5),
 
         Dense(2 ** 7, kernel_initializer='glorot_uniform'),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.25),
+        Dropout(0.5),
 
-        # Dense(2 ** 6, kernel_initializer='glorot_uniform'),
-        # PReLU(),
-        # BatchNormalization(),
-        # Dropout(0.25),
+        Dense(2 ** 6, kernel_initializer='glorot_uniform'),
+        PReLU(),
+        BatchNormalization(),
+        Dropout(0.25),
 
         # ｒ
         # Dense(64, kernel_initializer='glorot_uniform', activation="relu"),
@@ -263,7 +260,7 @@ def nn_train_model(
         model.set_weights(init_weights1)
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_6"))
+    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_7"))
 
     print(
         "\nIf you want to watch TF Board, you should enter the command."
@@ -450,6 +447,12 @@ def stacking(train, target, test, parameters):
         # "subsample": 0.7,
         "verbose": -1
     }
+    lgbm_params = {
+        'bagging_freq': 5, 'bagging_fraction': 0.8, 'boost_from_average': 'false', 'boost': 'gbdt',
+        'feature_fraction': 0.3, 'learning_rate': 0.05, 'max_depth': -1, 'metrics': 'multi_logloss',
+        'min_data_in_leaf': 10, 'min_sum_hessian_in_leaf': 8.0, 'num_leaves': 8, 'num_threads': 8,
+        'tree_learner': 'serial', 'objective': 'multiclass', 'num_class': 9, 'verbosity': -1
+    }
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
     gbdt = lgb.cv(lgbm_params,
@@ -508,6 +511,39 @@ def cat_boost(
     oof = pd.DataFrame(oof)
     oof.to_csv("data/09_oof/cb_{}.csv".format(1))
     return oof[len(target):]
+
+
+def catb_optuna(
+        train, target, test, parameters
+):
+    train_x, test_x, train_y, test_y = train_test_split(train.values, target.values, test_size=0.2, random_state=42)
+    train_pool = Pool(data=train_x, label=train_y, cat_features=[])
+    test_pool = Pool(data=test_x, label=test_y, cat_features=[])
+
+    def objective(trial):
+        params = {
+            'iterations': trial.suggest_int('iterations', 50, 500),
+            'depth': trial.suggest_int('depth', 6, 12),
+            "l2_leaf_reg":trial.suggest_int("l2_leaf_reg", 1, 100),
+            # 'learning_rate': 0.03,
+            "task_type": "GPU",
+            "loss_function": "MultiClass",
+            'random_strength': trial.suggest_int('random_strength', 0, 100),
+            'bagging_temperature': trial.suggest_loguniform('bagging_temperature', 0.01, 100.00),
+            'od_type': trial.suggest_categorical('od_type', ['IncToDec', 'Iter']),
+            'od_wait': trial.suggest_int('od_wait', 10, 50),
+            "verbose": 500
+        }
+        model = CatBoostClassifier(**params)
+        model.fit(train_pool)
+
+        preds = model.predict_proba(test_pool)
+        loss = log_loss(test_y, preds)
+        return loss
+
+    study = optuna.create_study()
+    study.optimize(objective, n_trials=100)
+    print(study.best_trial)
 
 
 def make_submit_file(pred: np.ndarray, ss: pd.DataFrame) -> None:

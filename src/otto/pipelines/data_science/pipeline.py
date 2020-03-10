@@ -81,13 +81,8 @@ def create_pipeline(**kwargs):
     return Pipeline(
         [
             node(
-                stacking,
+                catb_optuna,
                 ["df_train", "target", "df_test", "parameters"],
-                "knn_pred"
-            ),
-            node(
-                make_submit_file,
-                ["knn_pred", "sample_submission"],
                 None
             ),
         ]
