@@ -74,34 +74,56 @@ import shap
 
 
 def xgb_train_model(
-        df: pd.DataFrame, target: pd.DataFrame, parameters: Dict[str, Any]
+        df: pd.DataFrame, target: pd.DataFrame, test, parameters: Dict[str, Any]
 ):
     # kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    train_x = df.iloc[:len(target), :]
     # test_x = df.iloc[len(target):, :]
-
-    xgtrain = xgb.DMatrix(train_x, label=target)
 
     xgb_param = {
         "max_depth": parameters["max_depth"],
         "learning_rate": parameters["learning_rate"],
         # "n_jobs": parameters["n_jobs"],
         "objective": parameters["objective"],
+        "subsample": 0.8,
+        "min_child_weight": 5,
         "booster": "gbtree",
         "num_class": 9,
-        "num_leaves": 64
+        "num_leaves": 64,
+        "n_estimators": 1000
     }
     if parameters["gpu"]:
         xgb_param["device"] = "gpu"
         xgb_param["tree_method"] = "gpu_hist"
-        xgb_param["max_bin"] = 1024
+        xgb_param["max_bin"] = 32
+    n_splits = 5
+    n_neighbors = parameters["n_neighbors"]
+    folds = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-    cvresult = xgb.cv(xgb_param, xgtrain, num_boost_round=500, nfold=5, metrics=parameters["metric"],
-                      early_stopping_rounds=100, verbose_eval=50)
-    print("Best number of trees = {}".format(cvresult.shape[0]))
-    gbdt = xgb.train(xgb_param, xgtrain, num_boost_round=cvresult.shape[0])
-    return gbdt
+    oof = np.zeros((df.shape[0] + test.shape[0], 9))
+
+    for trn_idx, val_idx in folds.split(df, target):
+        train_x = df.iloc[trn_idx, :].values
+        val_x = df.iloc[val_idx, :].values
+        train_y = target[trn_idx].values
+        val_y = target[val_idx].values
+
+        clf = xgb.XGBClassifier(**xgb_param)
+        clf.fit(train_x, train_y,
+                eval_set=[(train_x, train_y), (val_x, val_y)],
+                eval_metric="mlogloss",
+                verbose=200,
+                early_stopping_rounds=500
+                )
+
+        # bst = xgb.train(params=xgb_param, dtrain=dtrain, evals=[(dtest, "eval")], early_stopping_rounds=300, num_boost_round=500,
+        #                 verbose_eval=500)
+        oof[val_idx] = clf.predict_proba(val_x)
+        oof[len(target):] += clf.predict_proba(test.values) / n_splits
+
+    oof = pd.DataFrame(oof)
+    oof.to_csv("data/09_oof/xgb_{}.csv".format("2"))
+    return oof[len(target):].values
 
 
 def lgbm_train_model(
@@ -491,7 +513,7 @@ def stacking(train, target, test, parameters):
     }
     lgbm_params = {
         'bagging_freq': 5, 'bagging_fraction': 0.8, 'boost_from_average': 'false', 'boost': 'gbdt',
-        'feature_fraction': 0.3, 'learning_rate': 0.05, 'max_depth': -1, 'metrics': 'multi_logloss',
+        'feature_fraction': 0.4, 'learning_rate': 0.03, 'max_depth': -1, 'metrics': 'multi_logloss',
         'min_data_in_leaf': 10, 'min_sum_hessian_in_leaf': 8.0, 'num_leaves': 8, 'num_threads': 8,
         'tree_learner': 'serial', 'objective': 'multiclass', 'num_class': 9, 'verbosity': -1
     }
