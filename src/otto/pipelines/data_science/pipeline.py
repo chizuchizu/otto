@@ -81,7 +81,7 @@ def create_pipeline(**kwargs):
     return Pipeline(
         [
             node(
-                stacking_xgb,
+                xgb_train_model,
                 ["df_train", "target", "df_test", "parameters"],
                 "knn_pred"
             ),

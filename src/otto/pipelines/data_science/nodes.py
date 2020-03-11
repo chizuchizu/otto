@@ -36,6 +36,7 @@ PLEASE DELETE THIS FILE ONCE YOU START WORKING ON YOUR OWN PROJECT!
 import logging
 from typing import Any, Dict
 
+import scipy as sp
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -89,8 +90,8 @@ def xgb_train_model(
         "min_child_weight": 5,
         "booster": "gbtree",
         "num_class": 9,
-        "num_leaves": 64,
-        "n_estimators": 1000
+        # "num_leaves": 64,
+        "n_estimators": 3000
     }
     if parameters["gpu"]:
         xgb_param["device"] = "gpu"
@@ -122,7 +123,7 @@ def xgb_train_model(
         oof[len(target):] += clf.predict_proba(test.values) / n_splits
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/xgb_{}.csv".format("2"))
+    oof.to_csv("data/09_oof/xgb_{}.csv".format("3"))
     return oof[len(target):].values
 
 
@@ -201,7 +202,7 @@ def nn_train_model(
     """
     n_splits = 5
     num_class = 9
-    epochs = 20
+    epochs = 200
     lr_init = 0.01
     bs = 256
     num_features = df.shape[1]
@@ -245,15 +246,15 @@ def nn_train_model(
     ])
 
     print(model.summary())
-    optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
+    optimizer = tf.keras.optimizers.SGD(lr=lr_init, decay=0.0001)
     # optimizer = SGD(learning_rate=lr_init)
 
     init_weights1 = model.get_weights()
 
     """callbacks"""
     callbacks = []
-    callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
-    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(lr_init / 3 ** (ep * 4 // epochs))))
+    # callbacks.append(tf.keras.callbacks.LearningRateScheduler(lr_scheduler))
+    callbacks.append(tf.keras.callbacks.LearningRateScheduler(lambda ep: float(lr_init / 3 ** (ep * 4 // epochs))))
 
     log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
     callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1))
@@ -282,7 +283,7 @@ def nn_train_model(
         model.set_weights(init_weights1)
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/nn_{}.csv".format("normal_7"))
+    oof.to_csv("data/09_oof/nn_{}.csv".format("9"))
 
     print(
         "\nIf you want to watch TF Board, you should enter the command."
@@ -727,7 +728,6 @@ def stacking_xgb(
         df_train = pd.concat([df_train.reset_index(drop=True), oof_data[:len(target)].reset_index(drop=True)], axis=1)
         df_test = pd.concat([df_test.reset_index(drop=True), oof_data[len(target):].reset_index(drop=True)], axis=1)
 
-
     xgb_param = {
         "max_depth": parameters["max_depth"],
         "learning_rate": parameters["learning_rate"],
@@ -821,3 +821,49 @@ class ModelExtractionCallback(object):
         self._assert_called_cb()
         # return boosting round when early stopping.
         return self._model.best_iteration
+
+
+def RI(X, m, k=1, normalize=True, seed=None, returnR=False):
+    R = RImatrix(X.shape[1], m, k, rm_dup_cols=True, seed=seed)
+    Mat = X * R
+    if normalize:
+        Mat = pd.normalize(Mat, norm='l2')
+    if returnR:
+        return Mat, R
+    else:
+        return Mat
+
+
+def RImatrix(p, m, k, rm_dup_cols=False, seed=None):
+    """ USAGE:
+    Argument
+      p: # of original varables
+      m: The length of index vector
+      k: # of 1s == # of -1s
+    Rerurn value
+      sparce.coo_matrix, shape:(p, s)
+      If rm_dup_cols == False s == m
+      else s <= m
+    """
+    if seed is not None: np.random.seed(seed)
+    popu = range(m)
+    row = np.repeat(range(p), 2 * k)
+    col = np.array([np.random.choice(popu, 2 * k, replace=False) for i in range(p)]).reshape((p * k * 2,))
+    data = np.tile(np.repeat([1, -1], k), p)
+    mat = sp.sparse.coo_matrix((data, (row, col)), shape=(p, m), dtype=sp.int8)
+    if rm_dup_cols:
+        mat = remove_duplicate_cols(mat)
+    return mat
+
+
+# mat: A sparse matrix
+def remove_duplicate_cols(mat):
+    if not isinstance(mat, sp.sparse.coo_matrix):
+        mat = mat.tocoo()
+    row = mat.row
+    col = mat.col
+    data = mat.data
+    crd = pd.DataFrame({'row': row, 'col': col, 'data': data}, columns=['col', 'row', 'data'])
+    col_rd = crd.groupby('col').apply(lambda x: str(np.array(x)[:, 1:]))
+    dup = col_rd.duplicated()
+    return mat.tocsc()[:, col_rd.index.values[dup.values == False]]
