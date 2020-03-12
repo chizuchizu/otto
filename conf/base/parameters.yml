@@ -9,16 +9,20 @@ n_jobs: 10
 objective: "multi:softmax"
 metric: "mlogloss"
 gpu: True
-n_neighbors: 2048
+n_neighbors: 512
 model_list: [
   "knn_2", "knn_4", "knn_8", "knn_16", "knn_32", "knn_64", "knn_128", "knn_256", "knn_512", "knn_1024", "knn_2048",
-  "lgbm_normal", "lgbm_normal_2", "lgbm_3", "lgbm_4", "lgbm_6",
+  "knn_n2", "knn_n4", "knn_n8", "knn_n16", "knn_n32", "knn_n64", "knn_n128", "knn_n256", "knn_n1024",
+
+  "lgbm_normal", "lgbm_normal_2", "lgbm_3", "lgbm_4", "lgbm_6", "lgbm_n_1",
   "nn_normal", "nn_normal_2", "nn_normal_3", "nn_normal_4", "nn_normal_5", "nn_normal_7", "nn_8", "nn_9",
+  "nn_n1", "nn_nn1", "nn_nn2",
   "extra_1", "extra_2", "extra_3", "extra_4", "extra_5",
+  "extra_n1", "extra_n2", "extra_n3",
   "rgf_1", "rgf_2", # "rgf_3",
   "rf_1", "rf_2",
   "cb_1", "cb_2",
 #   "nn_s1",
-  "xgb_1",
+  "xgb_1", "xgb_2", "xgb_3",
 #   "ada_1", "ada_2"
 ]

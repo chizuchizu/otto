@@ -47,21 +47,6 @@ NN model
                 ["nn_pred", "sample_submission"],
                 None
                 
-LGBM model
-            node(
-                lgbm_train_model,
-                ["df_train", "target", "df_test", "parameters"],
-                "lgb_model"
-            ),
-            node(
-                predict,
-                ["lgb_model", "df_test"],
-                "lgb_pred"
-            ),
-            node(
-                make_submit_file,
-                ["lgb_pred", "sample_submission"],
-                None
 
 knn_model
             node(
@@ -81,7 +66,7 @@ def create_pipeline(**kwargs):
     return Pipeline(
         [
             node(
-                xgb_train_model,
+                stacking,
                 ["df_train", "target", "df_test", "parameters"],
                 "knn_pred"
             ),

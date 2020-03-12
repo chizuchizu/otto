@@ -182,13 +182,14 @@ def lgbm_train_model(
         oof_preds[len(target):, :] += booster.predict(test.values, num_iteration=best_iteration) / 5
         print(n_fold, "DONE")
     oof = pd.DataFrame(oof_preds)
-    oof.to_csv("data/09_oof/lgbm_{}.csv".format("4"))
+    oof.to_csv("data/09_oof/lgbm_{}.csv".format("n_1"))
 
     clf.save_model(f"data/06_models/lgb_{datetime.today()}.txt")
 
     lgb.plot_importance(clf, max_num_features=20, importance_type="gain")
     plt.show()
-    return clf
+    pred = clf.predict(test.values)
+    return pred
 
 
 def nn_train_model(
@@ -202,7 +203,7 @@ def nn_train_model(
     """
     n_splits = 5
     num_class = 9
-    epochs = 200
+    epochs = 30
     lr_init = 0.01
     bs = 256
     num_features = df.shape[1]
@@ -220,17 +221,17 @@ def nn_train_model(
         Dense(2 ** 10, kernel_initializer='glorot_uniform'),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.5),
+        Dropout(0.4),
 
         Dense(2 ** 9, kernel_initializer='glorot_uniform', ),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.5),
+        Dropout(0.25),
 
         Dense(2 ** 7, kernel_initializer='glorot_uniform'),
         ReLU(),
         BatchNormalization(),
-        Dropout(0.5),
+        Dropout(0.25),
 
         Dense(2 ** 6, kernel_initializer='glorot_uniform'),
         PReLU(),
@@ -246,7 +247,7 @@ def nn_train_model(
     ])
 
     print(model.summary())
-    optimizer = tf.keras.optimizers.SGD(lr=lr_init, decay=0.0001)
+    optimizer = tf.keras.optimizers.Adam(lr=lr_init, decay=0.0001)
     # optimizer = SGD(learning_rate=lr_init)
 
     init_weights1 = model.get_weights()
@@ -283,7 +284,7 @@ def nn_train_model(
         model.set_weights(init_weights1)
 
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/nn_{}.csv".format("9"))
+    oof.to_csv("data/09_oof/nn_{}.csv".format("nn2"))
 
     print(
         "\nIf you want to watch TF Board, you should enter the command."
@@ -324,7 +325,7 @@ def knn_train_model(
     # oof = np.load("data/04_features/oof.npy")
     n_name = ["knn_{}".format(i) for i in range(9)]
     oof = pd.DataFrame(oof, columns=n_name)
-    oof.to_csv("data/09_oof/knn_{}.csv".format(n_neighbors))
+    oof.to_csv("data/09_oof/knn_n{}.csv".format(n_neighbors))
     return oof[len(target):].values
 
 
@@ -382,7 +383,7 @@ def extratrees(
         train_y = target[trn_idx].values
         val_y = target[val_idx].values
 
-        classifier = ExtraTreesClassifier(n_jobs=14, n_estimators=100, max_depth=10)
+        classifier = ExtraTreesClassifier(n_jobs=14, n_estimators=100, max_depth=12)
         classifier.fit(train_x, train_y)
 
         y_hat = classifier.predict_proba(val_x)
@@ -399,7 +400,7 @@ def extratrees(
     # oof = np.load("data/04_features/oof.npy")
     n_name = ["knn_{}".format(i) for i in range(9)]
     oof = pd.DataFrame(oof)
-    oof.to_csv("data/09_oof/extra_{}.csv".format("5"))
+    oof.to_csv("data/09_oof/extra_{}.csv".format("n3"))
     return oof[len(target):].values
 
 
@@ -867,3 +868,20 @@ def remove_duplicate_cols(mat):
     col_rd = crd.groupby('col').apply(lambda x: str(np.array(x)[:, 1:]))
     dup = col_rd.duplicated()
     return mat.tocsc()[:, col_rd.index.values[dup.values == False]]
+
+
+# Return a sparse matrix whose column has k_min to k_max 1s
+def col_k_ones_matrix(p, m, k=None, k_min=1, k_max=1, seed=None, rm_dup_cols=True):
+    if k is not None:
+        k_min = k_max = k
+    if seed is not None: np.random.seed(seed)
+    k_col = np.random.choice(range(k_min, k_max + 1), m)
+    col = np.repeat(range(m), k_col)
+    popu = np.arange(p)
+    l = [np.random.choice(popu, k_col[i], replace=False).tolist() for i in range(m)]
+    row = sum(l, [])
+    data = np.ones(k_col.sum())
+    mat = sp.sparse.coo_matrix((data, (row, col)), shape=(p, m), dtype=np.float32)
+    if rm_dup_cols:
+        mat = remove_duplicate_cols(mat)
+    return mat

@@ -42,6 +42,7 @@ from sklearn.metrics import log_loss
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_predict
 from datetime import datetime
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import cuml.manifold    as tsne_rapids
 import os
@@ -97,9 +98,18 @@ def split_data(df, df_tsne, df_umap, df_pca, df_features, df_kmeans, target):
 
     # df = pd.concat([df, df_features], axis=1, join_axes=[df.index])
     df = pd.concat([df.reset_index(drop=True), df_features.reset_index(drop=True)], axis=1)
+
+    R = col_k_ones_matrix(df.shape[1], 130, 2, 4, seed=101)
+    np.random.seed(111)
+    R.data = np.random.choice([1, -1], R.data.size)
+    X3 = df.values * R
+    X1 = np.sign(X3) * np.abs(X3) ** .6
+    scaler = StandardScaler()
+    df = pd.DataFrame(scaler.fit_transform(X1))
+
     train_df = df[:len(target)]
     test_df = df[len(target):]
-    df.to_csv("data/04_features/train2_csv", index=False)
+    # df.to_csv("data/04_features/train2_csv", index=False)
 
     oof_path = datetime.today()
 
@@ -211,9 +221,10 @@ def RImatrix(p, m, k, rm_dup_cols=False, seed=None):
     """
     if seed is not None: np.random.seed(seed)
     popu = range(m)
-    row = np.repeat(range(p), 2 * k)
-    col = np.array([np.random.choice(popu, 2 * k, replace=False) for i in range(p)]).reshape((p * k * 2,))
+    row = np.repeat(range(p), 2 * k)  # 繰り返す
+    col = np.array([np.random.choice(popu, 2 * k, replace=False) for i in range(p)]).reshape((p * k * 2,))  # n*k, 2
     data = np.tile(np.repeat([1, -1], k), p)
+    # 疎行列を利用している
     mat = sp.sparse.coo_matrix((data, (row, col)), shape=(p, m), dtype=sp.int8)
     if rm_dup_cols:
         mat = remove_duplicate_cols(mat)
